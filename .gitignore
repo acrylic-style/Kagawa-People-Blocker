@@ -1,3 +1,7 @@
 *.iml
 .idea/
-target/
+!target/Kagawa-People-Blocker-0.0.1.jar
+target/classes/
+target/generated-sources/
+target/maven-archiver/
+target/maven-status/
