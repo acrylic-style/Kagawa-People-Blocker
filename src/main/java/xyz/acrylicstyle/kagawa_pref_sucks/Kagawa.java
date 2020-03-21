@@ -25,20 +25,24 @@ public class Kagawa extends JavaPlugin implements Listener {
 
     private String apiKey = null;
 
+    private BukkitRunnable task = null;
     private int today = LocalDateTime.now().getDayOfYear(); // 1 - 366
     private final Set<UUID> bannedPlayers = ConcurrentHashMap.newKeySet();
     private final Map<UUID, Long> onlineKagawaPlayers = new ConcurrentHashMap<>();
 
     @Override
     public void onEnable() {
-        apiKey = this.getConfig().getString("api_key");
+        this.apiKey = this.getConfig().getString("api_key");
+
+        if (this.task != null) this.task.cancel();
 
         // Ticks per 1 sec
-        new BukkitRunnable() {
+        this.task = new BukkitRunnable() {
             @Override
             public void run() {
+                final long now = System.currentTimeMillis();
                 onlineKagawaPlayers.entrySet().stream()
-                        .filter(entry -> System.currentTimeMillis() - entry.getValue() > 60 * 60 * 1000)
+                        .filter(entry -> now - entry.getValue() > 60 * 60 * 1000)
                         .map(entry -> Bukkit.getPlayer(entry.getKey())) // Never null, because offline player's id will be removed when player quit.
                         .forEach(p -> {
                             p.kickPlayer(BANNED_MESSAGE);
@@ -53,35 +57,45 @@ public class Kagawa extends JavaPlugin implements Listener {
 
                 today = newDate;
             }
-        }.runTaskTimer(this, 0, 20);
+        };
+        this.task.runTaskTimer(this, 0, 20);
 
         Bukkit.getPluginManager().registerEvents(this, this);
     }
 
+    @Override
+    public void onDisable() {
+        if (this.task != null) {
+            this.task.cancel();
+            this.task = null;
+        }
+    }
+
     @EventHandler
     public void onAsyncPlayerPreLogin(final AsyncPlayerPreLoginEvent e) {
-        if (bannedPlayers.contains(e.getUniqueId())) {
+        final UUID id = e.getUniqueId();
+        if (this.bannedPlayers.contains(id)) {
             e.disallow(AsyncPlayerPreLoginEvent.Result.KICK_BANNED, BANNED_MESSAGE);
             return;
         }
 
-        if (apiKey == null) return;
+        if (this.apiKey == null) return;
 
-        JSONObject response = new JSONAPI("http://api.ipstack.com/" + e.getAddress().getHostAddress() + "?access_key=" + apiKey).call().getResponse();
+        final JSONObject response = new JSONAPI("http://api.ipstack.com/" + e.getAddress().getHostAddress() + "?access_key=" + this.apiKey).call().getResponse();
 
         if (response.getString("country_code").equals("JP")
                 && response.getString("region_name").equals("Kagawa")) {
-            onlineKagawaPlayers.put(e.getUniqueId(), System.currentTimeMillis());
+            this.onlineKagawaPlayers.put(id, System.currentTimeMillis());
         }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onKick(final PlayerKickEvent e) {
-        onlineKagawaPlayers.remove(e.getPlayer().getUniqueId());
+        this.onlineKagawaPlayers.remove(e.getPlayer().getUniqueId());
     }
 
     @EventHandler
     public void onQuit(final PlayerQuitEvent e) {
-        onlineKagawaPlayers.remove(e.getPlayer().getUniqueId());
+        this.onlineKagawaPlayers.remove(e.getPlayer().getUniqueId());
     }
 }
